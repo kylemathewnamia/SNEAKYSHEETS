@@ -1,203 +1,242 @@
+<?php
+// Start session
+session_start();
+
+// Database configuration
+$host = 'localhost';
+$dbname = 'sneakysheets';
+$username = 'root';
+$password = '';
+
+// Database connection
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    die("Database connection failed: " . $e->getMessage());
+}
+
+// Process login form
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Get form data
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
+    $remember = isset($_POST['remember']) ? $_POST['remember'] : false;
+
+    // Validate form data
+    $errors = [];
+
+    // Validate email
+    if (empty($email)) {
+        $errors[] = "Email is required";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors[] = "Invalid email format";
+    }
+
+    // Validate password
+    if (empty($password)) {
+        $errors[] = "Password is required";
+    }
+
+    // If no errors, proceed with login
+    if (empty($errors)) {
+        // Prepare select statement - FIXED: Changed 'id' to 'user_id'
+        $stmt = $pdo->prepare("SELECT user_id, name, email, password FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch();
+
+        if ($user && password_verify($password, $user['password'])) {
+            // Password is correct, start session - FIXED: Changed $user['id'] to $user['user_id']
+            $_SESSION['user_id'] = $user['user_id']; // This was line 46
+            $_SESSION['user_name'] = $user['name'];
+            $_SESSION['user_email'] = $user['email'];
+
+            // Set remember me cookie if checked
+            if ($remember) {
+                setcookie('remember_email', $email, time() + (86400 * 30), "/"); // 30 days
+            }
+
+            // Redirect to USER DASHBOARD (not root index.php)
+            header("Location:user/index.php");
+            exit();
+        } else {
+            $errors[] = "Invalid email or password";
+        }
+    }
+
+    // If there are errors, store them in session
+    $_SESSION['login_errors'] = $errors;
+}
+
+// Check if user is already logged in - REDIRECT TO USER DASHBOARD
+if (isset($_SESSION['user_id'])) {
+    header("Location: user/index.php");
+    exit();
+}
+
+// Get any login errors
+$login_errors = isset($_SESSION['login_errors']) ? $_SESSION['login_errors'] : [];
+unset($_SESSION['login_errors']);
+
+// Get remembered email
+$remembered_email = isset($_COOKIE['remember_email']) ? $_COOKIE['remember_email'] : '';
+?>
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - GameHub</title>
+    <title>Login - SneakyPLay</title>
 
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-        }
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
-        body {
-            font-family: Arial, sans-serif;
-            background-image: url("background.jpg");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-color: rgba(0,0,0,0.75);
-            background-blend-mode: darken;
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-            color: white;
-            min-height: 100vh;
+    <!-- Google Fonts - Poppins -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        header {
-            width: 100%;
-            background: rgba(0,0,0,0.7);
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            backdrop-filter: blur(3px);
-            box-sizing: border-box;
-        }
-
-        header h1 {
-            margin: 0;
-            font-size: 28px;
-            letter-spacing: 2px;
-        }
-
-        nav a {
-            color: white;
-            margin: 0 12px;
-            text-decoration: none;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-
-        nav a:hover {
-            color: #00eaff;
-        }
-
-        .content-wrapper {
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            margin-top: 40px;
-        }
-
-        .container {
-            background: rgba(0,0,0,0.8);
-            padding: 35px;
-            width: 380px;
-            border-radius: 10px;
-            color: #fff;
-            box-shadow: 0 0 15px rgba(255,255,255,0.1);
-        }
-
-        h2 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #00eaff;
-        }
-
-        label {
-            display: block;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-
-        input {
-            width: 94.5%;
-            padding: 10px;
-            margin: 6px auto;
-            display: block;
-            border-radius: 5px;
-            border: none;
-            background: #222;
-            color: #fff;
-        }
-
-        input:focus {
-            outline: 2px solid #00eaff;
-        }
-
-        .social-btn {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
-            padding: 8px 14px;
-            margin: 15px 0 10px;
-            border-radius: 8px;
-            background: #fff;
-            font-size: 16px;
-            cursor: pointer;
-            transition: 0.2s;
-            color: #000;
-        }
-
-        .social-btn img {
-            width: 20px;
-            height: 20px;
-            margin-left: 80px;
-        }
-
-        .facebook-btn {
-            border: none;
-            margin-bottom: 80px;
-        }
-
-        button[type="submit"] {
-            width: 100%;
-            padding: 12px;
-            background: #00eaff;
-            border: none;
-            color: #000;
-            cursor: pointer;
-            font-size: 16px;
-            border-radius: 5px;
-            font-weight: bold;
-        }
-
-        button[type="submit"]:hover {
-            background: #00bcd4;
-        }
-
-        .signup {
-            text-align: center;
-            margin-top: 15px;
-        }
-
-        .signup a {
-            color: #00eaff;
-            text-decoration: none;
-        }
-    </style>
+    <!-- External CSS -->
+    <link rel="stylesheet" href="assets/css/login.css">
 </head>
+
 <body>
-
-    <header>
-        <h1>GameHub</h1>
-        <nav>
-            <a href="landingpage.php">Home</a>
-            <a href="products.php">Products</a>
-            <a href="categories.php">Categories</a>
-            <a href="cart.php">Cart</a>
-            <a href="login.php">Login</a>
-            <a href="signup.php">Sign Up</a>
-        </nav>
-    </header>
-
-    <div class="content-wrapper">
+    <!-- Navigation Header -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
         <div class="container">
-            <h2>Login</h2>
+            <a class="navbar-brand" href="#">SneakyPlay</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.php">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Products</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">About</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Contact</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="register.php">Register</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
 
-            <!-- IMPORTANT PART -->
-            <form action="clientlandingpage.php" method="POST">
-                <label>Username</label>
-                <input type="text" name="username" required>
+    <!-- Main Login Content -->
+    <div class="container mt-5 pt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-5">
+                <div class="auth-container">
+                    <div class="auth-header text-center">
+                        <h2 class="auth-title">Welcome Back</h2>
+                        <p class="auth-subtitle">Sign in to your SneakyPlay account</p>
+                    </div>
 
-                <label>Password</label>
-                <input type="password" name="password" required>
+                    <div class="auth-body">
+                        <!-- Show login errors if any -->
+                        <?php if (!empty($login_errors)): ?>
+                            <div class="alert alert-danger">
+                                <ul class="mb-0">
+                                    <?php foreach ($login_errors as $error): ?>
+                                        <li><?php echo htmlspecialchars($error); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
 
-                <button type="button" class="social-btn google-btn">
-                    <img src="googleicon.png" alt="Google Icon">
-                    Continue with Google
-                </button>
+                        <!-- Login Form -->
+                        <form id="login-form" class="auth-form" action="login.php" method="POST">
+                            <div class="form-floating mb-3">
+                                <input type="email" class="form-control" id="login-email" name="email"
+                                    placeholder="name@example.com" required
+                                    value="<?php echo htmlspecialchars($remembered_email); ?>">
+                                <label for="login-email">Email address</label>
+                                <div class="invalid-feedback">Please enter a valid email address.</div>
+                            </div>
 
-                <button type="button" class="social-btn facebook-btn">
-                    <img src="facebooklogo.avif" alt="Facebook Icon">
-                    Continue with Facebook
-                </button>
+                            <div class="form-floating mb-3">
+                                <input type="password" class="form-control" id="login-password" name="password"
+                                    placeholder="Password" required>
+                                <label for="login-password">Password</label>
+                                <i class="fas fa-eye password-toggle" onclick="togglePassword('login-password')"></i>
+                                <div class="invalid-feedback">Password must be at least 6 characters.</div>
+                            </div>
 
-                <button type="submit">Login</button>
-            </form>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="remember-me" name="remember"
+                                    <?php echo !empty($remembered_email) ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="remember-me">
+                                    Remember me
+                                </label>
+                            </div>
 
-            <div class="signup">
-                Don't have an account? <a href="signup.php">Sign Up</a>
+                            <button type="submit" class="auth-button w-100">Sign In</button>
+                        </form>
+
+                        <div class="divider mt-4">
+                            <span>or continue with</span>
+                        </div>
+
+                        <div class="social-login mt-4">
+                            <a href="#" class="social-btn">
+                                <i class="fab fa-google"></i>
+                                <span>Google</span>
+                            </a>
+                            <a href="#" class="social-btn">
+                                <i class="fab fa-facebook-f"></i>
+                                <span>Facebook</span>
+                            </a>
+                            <a href="#" class="social-btn">
+                                <i class="fab fa-twitter"></i>
+                                <span>Twitter</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="auth-footer text-center mt-4">
+                        <p>Don't have an account? <a href="register.php">Sign up</a></p>
+                        <p class="mt-2"><a href="#" class="text-decoration-none">Forgot your password?</a></p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- External JavaScript -->
+    <script src="assets/js/login.js"></script>
+
+    <script>
+        // Toggle password visibility
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const icon = input.nextElementSibling.querySelector('i');
+
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+    </script>
 </body>
+
 </html>
